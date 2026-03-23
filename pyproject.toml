@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "study-assistant"
+version = "0.1.0"
+description = "PDF 교재 → Obsidian vault 변환 파이프라인"
+requires-python = ">=3.9"
+dependencies = [
+    "mistralai",
+    "PyPDF2",
+    "openai",
+    "pyyaml",
+    "nest_asyncio",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
