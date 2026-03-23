@@ -7,17 +7,14 @@ from typing import Any, Dict, List, Optional
 
 
 def safe_filename(name: str) -> str:
-    """파일명에 사용할 수 없는 문자를 _ 로 치환."""
     return re.sub(r'[<>:"/\\|?*\s]+', '_', name)
 
 
 def extract_wikilinks(text: str) -> List[str]:
-    """텍스트에서 [[wikilink]] 추출."""
     return sorted(set(re.findall(r"\[\[([^\]]+)\]\]", text)))
 
 
 def expand_page_range(pages: List[int]) -> List[int]:
-    """[4, 10] 같은 불완전 범위를 [4,5,6,7,8,9,10]으로 확장."""
     if not pages:
         return []
     pages = [int(p) for p in pages]
@@ -32,7 +29,6 @@ def expand_page_range(pages: List[int]) -> List[int]:
 
 
 def enforce_prefix(data: Dict[str, Any], prefix: str) -> Dict[str, Any]:
-    """파일명에 prefix를 강제 적용."""
     fixed = {}
     for filename, info in data.items():
         name = filename
@@ -48,10 +44,7 @@ def enforce_prefix(data: Dict[str, Any], prefix: str) -> Dict[str, Any]:
     return fixed
 
 
-def postprocess_metadata(
-    data: Dict[str, Any], file_type: str, chunk_id: str
-) -> Dict[str, Any]:
-    """LLM 응답 파일에 메타데이터를 부착."""
+def postprocess_metadata(data: Dict[str, Any], file_type: str, chunk_id: str) -> Dict[str, Any]:
     result = {}
     for filename, info in data.items():
         content = info.get("content", "")
@@ -68,8 +61,6 @@ def postprocess_metadata(
 
 
 class JSONParser:
-    """LLM JSON 응답을 여러 전략으로 파싱."""
-
     @staticmethod
     def parse(raw: str) -> Optional[dict]:
         for fn in [JSONParser._direct, JSONParser._fence, JSONParser._brace]:
@@ -107,7 +98,6 @@ class JSONParser:
 
 
 def list_books(drive_base: str) -> List[dict]:
-    """OCR 완료된 교재 목록 반환."""
     base = Path(drive_base)
     books = []
     if not base.exists():
@@ -128,17 +118,13 @@ def list_books(drive_base: str) -> List[dict]:
                     types[t] = types.get(t, 0) + 1
                 chunk_types = ", ".join(f"{t}:{n}" for t, n in types.items())
             books.append({
-                "name": d.name,
-                "path": d,
-                "pages": md_count,
-                "has_chunks": has_chunks,
-                "chunk_types": chunk_types,
+                "name": d.name, "path": d, "pages": md_count,
+                "has_chunks": has_chunks, "chunk_types": chunk_types,
             })
     return books
 
 
 def print_books(books: List[dict]) -> None:
-    """교재 목록 출력."""
     if not books:
         print("⚠️ 교재 없음")
         return
@@ -151,7 +137,6 @@ def print_books(books: List[dict]) -> None:
 
 
 def load_page_texts(book_dir: Path) -> Dict[int, str]:
-    """교재 디렉토리에서 page_XXXX.md를 읽어 {페이지번호: 본문} 반환."""
     page_texts = {}
     for md_path in sorted(book_dir.glob("page_*.md")):
         raw = md_path.read_text(encoding="utf-8")

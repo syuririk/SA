@@ -9,7 +9,7 @@ import shutil
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
@@ -20,47 +20,25 @@ from .utils import (
     load_page_texts, postprocess_metadata, JSONParser,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    force=True,
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", force=True)
 log = logging.getLogger("Pipeline")
 
-TYPE_TO_FOLDER = {
-    "ToC": "", "Source": "Sources", "Summary": "Summaries",
-    "Quiz": "Quizzes", "Created_Quiz": "Quizzes",
-}
-
-CHUNK_ICONS = {
-    "toc": "📑 목차/서문", "heading": "📌 표제",
-    "content": "📖 학습 내용", "quiz": "❓ 연습문제",
-}
+TYPE_TO_FOLDER = {"ToC": "", "Source": "Sources", "Summary": "Summaries",
+                  "Quiz": "Quizzes", "Created_Quiz": "Quizzes"}
+CHUNK_ICONS = {"toc": "📑 목차/서문", "heading": "📌 표제",
+               "content": "📖 학습 내용", "quiz": "❓ 연습문제"}
 
 
-# ── LLM 호출 ──────────────────────────────────
-
-async def call_llm(
-    client: AsyncOpenAI,
-    semaphore: asyncio.Semaphore,
-    system_prompt: str,
-    user_prompt: str,
-    model_config: dict,
-    max_retries: int = 3,
-    retry_delay: int = 5,
-) -> Optional[dict]:
+async def call_llm(client, semaphore, system_prompt, user_prompt, model_config,
+                   max_retries=3, retry_delay=5):
     async with semaphore:
         for attempt in range(1, max_retries + 1):
             try:
                 extra = "\n\nReturn ONLY raw JSON." if attempt > 1 else ""
-                kwargs = {
-                    **model_config,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt + extra},
-                    ],
-                    "response_format": {"type": "json_object"},
-                }
+                kwargs = {**model_config,
+                          "messages": [{"role": "system", "content": system_prompt},
+                                       {"role": "user", "content": user_prompt + extra}],
+                          "response_format": {"type": "json_object"}}
                 response = await client.chat.completions.create(**kwargs)
                 parsed = JSONParser.parse(response.choices[0].message.content)
                 if parsed is not None:
@@ -73,20 +51,11 @@ async def call_llm(
     return None
 
 
-# ── 개별 태스크 ───────────────────────────────
-
-async def summarize_and_detect(chunk: dict, client, sem, cfg: Config):
-    prompt = (
-        f"Source: {chunk['id']} — {chunk['title']}\n"
-        f"Pages: {chunk.get('pages', [])}\n\n"
-        f"Study material:\n{chunk['text']}"
-    )
-    raw = await call_llm(
-        client, sem, SUMMARY, prompt,
-        cfg.get("pipeline.summary"),
-        cfg.get("pipeline.max_retries", 3),
-        cfg.get("pipeline.retry_delay", 5),
-    )
+async def summarize_and_detect(chunk, client, sem, cfg):
+    prompt = (f"Source: {chunk['id']} — {chunk['title']}\n"
+              f"Pages: {chunk.get('pages', [])}\n\nStudy material:\n{chunk['text']}")
+    raw = await call_llm(client, sem, SUMMARY, prompt, cfg.get("pipeline.summary"),
+                         cfg.get("pipeline.max_retries", 3), cfg.get("pipeline.retry_delay", 5))
     if raw is None:
         return {}, False, False
     has_quiz = raw.get("has_quiz", False)
@@ -98,17 +67,11 @@ async def summarize_and_detect(chunk: dict, client, sem, cfg: Config):
     return postprocess_metadata(files, "Summary", chunk["id"]), has_quiz, needs_quiz
 
 
-async def extract_quizzes(chunk: dict, client, sem, cfg: Config):
-    prompt = (
-        f"Source: {chunk['id']} — {chunk['title']}\n\n"
-        f"Study material:\n{chunk['text']}"
-    )
-    raw = await call_llm(
-        client, sem, QUIZ_EXTRACT, prompt,
-        cfg.get("pipeline.quiz_extract"),
-        cfg.get("pipeline.max_retries", 3),
-        cfg.get("pipeline.retry_delay", 5),
-    )
+async def extract_quizzes(chunk, client, sem, cfg):
+    prompt = (f"Source: {chunk['id']} — {chunk['title']}\n\n"
+              f"Study material:\n{chunk['text']}")
+    raw = await call_llm(client, sem, QUIZ_EXTRACT, prompt, cfg.get("pipeline.quiz_extract"),
+                         cfg.get("pipeline.max_retries", 3), cfg.get("pipeline.retry_delay", 5))
     if not raw:
         return None
     raw = enforce_prefix(raw, "Quiz_")
@@ -131,39 +94,27 @@ async def create_quizzes(chunk, summary_data, existing_quiz_data, client, sem, c
         return None
     log.info(f"    미커버 {len(uncov)}개")
     us = ", ".join([f"[[{c}]]" for c in uncov])
-    prompt = (
-        f"Create review questions for: {us}\n\n"
-        f"Source: {chunk['id']} — {chunk['title']}\n\n"
-        f"Context:\n{chunk['text']}"
-    )
-    raw = await call_llm(
-        client, sem, QUIZ_CREATE, prompt,
-        cfg.get("pipeline.quiz_create"),
-        cfg.get("pipeline.max_retries", 3),
-        cfg.get("pipeline.retry_delay", 5),
-    )
+    prompt = (f"Create review questions for: {us}\n\n"
+              f"Source: {chunk['id']} — {chunk['title']}\n\nContext:\n{chunk['text']}")
+    raw = await call_llm(client, sem, QUIZ_CREATE, prompt, cfg.get("pipeline.quiz_create"),
+                         cfg.get("pipeline.max_retries", 3), cfg.get("pipeline.retry_delay", 5))
     if not raw:
         return None
     raw = enforce_prefix(raw, "CQuiz_")
     return postprocess_metadata(raw, "Created_Quiz", chunk["id"])
 
 
-# ── 청크 처리 ─────────────────────────────────
-
 async def process_content_chunk(chunk, client, sem, cfg):
     results = {}
     cid = chunk["id"]
     log.info(f"  📖 {cid}: 시작 ({len(chunk['pages'])}p, {len(chunk['text']):,}자)")
-
     summary, has_quiz, needs_quiz = await summarize_and_detect(chunk, client, sem, cfg)
     if summary:
         results.update(summary)
         log.info(f"  {cid}: Summary {len(summary)}개")
-
     if not needs_quiz:
         log.info(f"  {cid}: 퀴즈 불필요 → 스킵")
         return results
-
     quizzes = {}
     if has_quiz:
         log.info(f"  {cid}: 퀴즈 발견 → 추출")
@@ -171,7 +122,6 @@ async def process_content_chunk(chunk, client, sem, cfg):
         if quizzes:
             results.update(quizzes)
             log.info(f"  {cid}: Quiz_ {len(quizzes)}개")
-
     new_q = await create_quizzes(chunk, summary, quizzes, client, sem, cfg) or {}
     if new_q:
         results.update(new_q)
@@ -188,36 +138,23 @@ async def process_quiz_chunk(chunk, client, sem, cfg):
     return q
 
 
-# ── 청크 문서 빌더 ────────────────────────────
-
-def build_chunk_document(chunk: dict) -> dict:
+def build_chunk_document(chunk):
     cid, title, text = chunk["id"], chunk["title"], chunk["text"]
     label = CHUNK_ICONS.get(chunk.get("type", "content"), "📄")
     pp = chunk.get("pages", [])
     pi = f"p.{pp[0]}-{pp[-1]}" if len(pp) > 1 else f"p.{pp[0]}" if pp else ""
     content = f"# {title}\n\n> {label} | {pi} | {len(pp)}페이지\n\n{text}"
-    return {
-        f"{cid}.md": {
-            "content": content,
-            "metadata": {
-                "file_type": "Source",
-                "source_chunk": f"[[{cid}]]",
-                "key_concepts": [],
-                "concepts": [f"[[{c}]]" for c in extract_wikilinks(text)],
-            },
-        }
-    }
+    return {f"{cid}.md": {"content": content, "metadata": {
+        "file_type": "Source", "source_chunk": f"[[{cid}]]",
+        "key_concepts": [], "concepts": [f"[[{c}]]" for c in extract_wikilinks(text)]}}}
 
 
-# ── ToC / 저장 / 인덱스 ──────────────────────
-
-def generate_toc(chunks: list, all_files: dict) -> dict:
+def generate_toc(chunks, all_files):
     lines = ["# 📚 Master Table of Contents\n", "> 중앙 허브\n"]
     cf = defaultdict(lambda: {"source": [], "summary": [], "quiz": [], "created_quiz": []})
     for fn, info in all_files.items():
         m = info.get("metadata", {})
-        ft = m.get("file_type", "")
-        src = m.get("source_chunk", "").replace("[[", "").replace("]]", "")
+        ft, src = m.get("file_type", ""), m.get("source_chunk", "").strip("[]")
         nne = fn.replace(".md", "")
         if ft == "Source": cf[src]["source"].append(nne)
         elif ft == "Summary": cf[src]["summary"].append(nne)
@@ -226,8 +163,7 @@ def generate_toc(chunks: list, all_files: dict) -> dict:
     for chunk in chunks:
         cid, title = chunk["id"], chunk["title"]
         files = cf.get(cid, {})
-        icon = {"toc": "📑", "heading": "📌", "content": "📖", "quiz": "❓"}.get(
-            chunk.get("type", "content"), "📄")
+        icon = {"toc": "📑", "heading": "📌", "content": "📖", "quiz": "❓"}.get(chunk.get("type"), "📄")
         pr = chunk.get("pages", [])
         ps = f"p.{pr[0]}-{pr[-1]}" if len(pr) > 1 else f"p.{pr[0]}" if pr else ""
         lines.append(f"\n## {icon} [[Sources/{cid}|{title}]] ({ps})\n")
@@ -244,7 +180,8 @@ def generate_toc(chunks: list, all_files: dict) -> dict:
         "key_concepts": [], "concepts": [f"[[{c}]]" for c in extract_wikilinks(content)]}}}
 
 
-def save_results(all_data: dict, output_dir: Path) -> int:
+def save_results(all_data, output_dir):
+    output_dir = Path(output_dir)
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -253,8 +190,7 @@ def save_results(all_data: dict, output_dir: Path) -> int:
         safe = re.sub(r'[<>:"/\\|?*]', "_", fn)
         if not safe.endswith(".md"):
             safe += ".md"
-        content = info.get("content", "")
-        meta = info.get("metadata", {})
+        content, meta = info.get("content", ""), info.get("metadata", {})
         ft = meta.get("file_type", "Note")
         sf = TYPE_TO_FOLDER.get(ft, "Other")
         folder = output_dir / sf if sf else output_dir
@@ -271,23 +207,18 @@ def save_results(all_data: dict, output_dir: Path) -> int:
     return saved
 
 
-def build_index(all_data: dict, output_dir: Path) -> dict:
-    idx = {
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "total_files": len(all_data),
-        "folder_structure": {}, "files": {},
-        "concept_index": {}, "chunk_graph": {},
-    }
+def build_index(all_data, output_dir):
+    output_dir = Path(output_dir)
+    idx = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "total_files": len(all_data),
+           "folder_structure": {}, "files": {}, "concept_index": {}, "chunk_graph": {}}
     for fn, info in all_data.items():
         m = info.get("metadata", {})
         ft = m.get("file_type", "Note")
         sf = TYPE_TO_FOLDER.get(ft, "Other")
         path = f"{sf}/{fn}" if sf else fn
-        idx["files"][fn] = {
-            "path": path, "type": ft, "source_chunk": m.get("source_chunk", ""),
-            "key_concepts": m.get("key_concepts", []), "concepts": m.get("concepts", []),
-            "content_length": len(info.get("content", "")),
-        }
+        idx["files"][fn] = {"path": path, "type": ft, "source_chunk": m.get("source_chunk", ""),
+                            "key_concepts": m.get("key_concepts", []), "concepts": m.get("concepts", []),
+                            "content_length": len(info.get("content", ""))}
         idx["folder_structure"].setdefault(sf if sf else "(root)", []).append(fn)
         for c in m.get("concepts", []):
             c2 = c.strip("[]")
@@ -298,23 +229,19 @@ def build_index(all_data: dict, output_dir: Path) -> dict:
         if cid:
             idx["chunk_graph"].setdefault(cid, [])
             idx["chunk_graph"][cid].append({"file": fn, "type": ft})
-    idx["stats"] = {
-        "by_type": {}, "total_concepts": len(idx["concept_index"]),
-        "total_chunks": len(idx["chunk_graph"]),
-    }
+    idx["stats"] = {"by_type": {}, "total_concepts": len(idx["concept_index"]),
+                    "total_chunks": len(idx["chunk_graph"])}
     for fi in idx["files"].values():
         t = fi["type"]
         idx["stats"]["by_type"][t] = idx["stats"]["by_type"].get(t, 0) + 1
-    ip = output_dir / "vault_index.json"
-    ip.write_text(json.dumps(idx, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output_dir / "vault_index.json").write_text(
+        json.dumps(idx, ensure_ascii=False, indent=2), encoding="utf-8")
     log.info(f"📇 인덱스: {len(idx['files'])}개 파일, {len(idx['concept_index'])}개 개념")
     return idx
 
 
-# ── 파이프라인 메인 ────────────────────────────
-
-def assemble_chunks(book_dir: Path) -> list:
-    """chunks.json + page .md → 실행용 청크 리스트."""
+def assemble_chunks(book_dir):
+    book_dir = Path(book_dir)
     with open(book_dir / "chunks.json", "r", encoding="utf-8") as f:
         chunks_raw = json.load(f)
     page_texts = load_page_texts(book_dir)
@@ -325,18 +252,12 @@ def assemble_chunks(book_dir: Path) -> list:
         missing = [p for p in pn if p not in page_texts]
         if missing:
             print(f"  ⚠️ '{c['title']}': 페이지 {missing} 없음")
-        chunks.append({
-            "id": f"chunk_{len(chunks)+1:03d}",
-            "title": c["title"],
-            "text": "\n\n".join(tp),
-            "pages": pn,
-            "type": c.get("type", "content"),
-        })
+        chunks.append({"id": f"chunk_{len(chunks)+1:03d}", "title": c["title"],
+                       "text": "\n\n".join(tp), "pages": pn, "type": c.get("type", "content")})
     return chunks
 
 
-async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
-    """비동기 파이프라인 메인."""
+async def run_pipeline_async(cfg, book_dir, book_name):
     chunks = assemble_chunks(book_dir)
     content_chunks = [c for c in chunks if c["type"] == "content"]
     toc_chunks = [c for c in chunks if c["type"] == "toc"]
@@ -349,12 +270,11 @@ async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
     for c in chunks:
         pr = c["pages"]
         ps = f"p{pr[0]}-{pr[-1]}" if len(pr) > 1 else f"p{pr[0]}"
-        print(f"  {c['id']} [{c['type']:7s}] {ps:10s} {len(c['text']):6,}자 "
-              f"({len(pr)}p) | {c['title'][:40]}")
+        print(f"  {c['id']} [{c['type']:7s}] {ps:10s} {len(c['text']):6,}자 ({len(pr)}p) | {c['title'][:40]}")
 
     client = AsyncOpenAI()
     sem = asyncio.Semaphore(cfg.get("pipeline.max_concurrent", 5))
-    all_results: Dict[str, Any] = {}
+    all_results = {}
 
     def merge(data):
         for fn, info in data.items():
@@ -365,12 +285,9 @@ async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
                 ctr += 1
             all_results[name] = info
 
-    scfg = cfg.get("pipeline.summary")
-    qecfg = cfg.get("pipeline.quiz_extract")
-    qccfg = cfg.get("pipeline.quiz_create")
     log.info("=" * 60)
     log.info(f"📚 {book_name}")
-    log.info(f"   요약={scfg} | 추출={qecfg} | 생성={qccfg}")
+    log.info(f"   요약={cfg.get('pipeline.summary')} | 추출={cfg.get('pipeline.quiz_extract')} | 생성={cfg.get('pipeline.quiz_create')}")
     log.info("=" * 60)
 
     log.info("① 원본 청크 문서...")
@@ -379,9 +296,7 @@ async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
 
     if content_chunks:
         log.info(f"② Content {len(content_chunks)}개 → 비동기")
-        rl = await asyncio.gather(
-            *[process_content_chunk(c, client, sem, cfg) for c in content_chunks],
-            return_exceptions=True)
+        rl = await asyncio.gather(*[process_content_chunk(c, client, sem, cfg) for c in content_chunks], return_exceptions=True)
         for i, r in enumerate(rl):
             if isinstance(r, Exception):
                 log.error(f"  ❌ {content_chunks[i]['id']}: {r}")
@@ -391,9 +306,7 @@ async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
 
     if quiz_chunks:
         log.info(f"③ Quiz {len(quiz_chunks)}개 → 추출")
-        rl = await asyncio.gather(
-            *[process_quiz_chunk(c, client, sem, cfg) for c in quiz_chunks],
-            return_exceptions=True)
+        rl = await asyncio.gather(*[process_quiz_chunk(c, client, sem, cfg) for c in quiz_chunks], return_exceptions=True)
         for i, r in enumerate(rl):
             if isinstance(r, Exception):
                 log.error(f"  ❌ {quiz_chunks[i]['id']}: {r}")
@@ -408,11 +321,11 @@ async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
     log.info("⑥ Master ToC...")
     merge(generate_toc(chunks, all_results))
 
-    output = book_dir / "obsidian_output"
+    out = Path(book_dir) / "obsidian_output"
     log.info("⑦ 저장...")
-    saved = save_results(all_results, output)
+    saved = save_results(all_results, out)
     log.info("⑧ vault_index.json...")
-    build_index(all_results, output)
+    build_index(all_results, out)
 
     tc = {}
     for info in all_results.values():
@@ -423,11 +336,10 @@ async def run_pipeline_async(cfg: Config, book_dir: Path, book_name: str):
     for t, c in sorted(tc.items()):
         log.info(f"  {t}: {c}개")
     log.info("=" * 60)
-    return all_results, output
+    return all_results, out
 
 
-def run_pipeline(cfg: Config, book_dir: Path, book_name: str):
-    """파이프라인 실행 (진입점)."""
+def run_pipeline(cfg, book_dir, book_name):
     import nest_asyncio
     nest_asyncio.apply()
     return asyncio.run(run_pipeline_async(cfg, book_dir, book_name))

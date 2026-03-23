@@ -36,7 +36,6 @@ _DEFAULT_CONFIG = {
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """base dict에 override를 재귀적으로 병합."""
     result = copy.deepcopy(base)
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -47,25 +46,16 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 class Config:
-    """설정 로드/조회/수정/저장을 담당하는 클래스.
+    """설정 로드/조회/수정/저장.
 
     사용법:
-        cfg = Config()                      # 기본값으로 생성
-        cfg = Config("config.yaml")         # YAML 파일에서 로드
-        cfg = Config({"book": {"index": 1}})  # dict로 오버라이드
+        cfg = Config()
+        cfg = Config("config.yaml")
+        cfg = Config({"book": {"index": 1}})
 
-        # 조회
-        cfg.get("paths.drive_base")
-        cfg.get("pipeline.summary")         # → {"model": "gpt-5-mini"}
-
-        # 수정
+        cfg.get("pipeline.summary")
         cfg.set("book.index", 2)
-        cfg.set("pipeline.summary.model", "gpt-5.4-mini")
-
-        # 저장
         cfg.save("my_config.yaml")
-
-        # 전체 확인
         cfg.show()
     """
 
@@ -74,10 +64,7 @@ class Config:
         if source is not None:
             self.load(source)
 
-    # ── 로드 ──────────────────────────────────────
-
     def load(self, source: Any) -> "Config":
-        """YAML 파일 경로(str/Path) 또는 dict에서 설정을 병합."""
         if isinstance(source, (str, Path)):
             path = Path(source)
             if path.exists():
@@ -88,14 +75,9 @@ class Config:
                 print(f"⚠️ 설정 파일 없음: {path} (기본값 사용)")
         elif isinstance(source, dict):
             self._data = _deep_merge(self._data, source)
-        else:
-            raise TypeError(f"지원하지 않는 소스 타입: {type(source)}")
         return self
 
-    # ── 조회 ──────────────────────────────────────
-
     def get(self, key: str, default: Any = None) -> Any:
-        """dot-separated 키로 값 조회. 예: 'pipeline.summary.model'"""
         parts = key.split(".")
         node = self._data
         for part in parts:
@@ -111,10 +93,7 @@ class Config:
             raise KeyError(key)
         return result
 
-    # ── 수정 ──────────────────────────────────────
-
     def set(self, key: str, value: Any) -> "Config":
-        """dot-separated 키로 값 설정. 중간 경로가 없으면 자동 생성."""
         parts = key.split(".")
         node = self._data
         for part in parts[:-1]:
@@ -124,10 +103,7 @@ class Config:
         node[parts[-1]] = value
         return self
 
-    # ── 저장 ──────────────────────────────────────
-
     def save(self, path: str = "config.yaml") -> Path:
-        """현재 설정을 YAML 파일로 저장."""
         p = Path(path)
         with open(p, "w", encoding="utf-8") as f:
             yaml.dump(self._data, f, default_flow_style=False,
@@ -135,10 +111,7 @@ class Config:
         print(f"✅ 설정 저장: {p}")
         return p
 
-    # ── 표시 ──────────────────────────────────────
-
     def show(self, section: Optional[str] = None) -> None:
-        """설정 내용을 보기 좋게 출력."""
         data = self.get(section) if section else self._data
         if data is None:
             print(f"⚠️ '{section}' 섹션 없음")
@@ -164,8 +137,6 @@ class Config:
         else:
             print(f"{prefix}{data}")
 
-    # ── 편의 프로퍼티 ─────────────────────────────
-
     @property
     def drive_base(self) -> str:
         return self.get("paths.drive_base")
@@ -184,5 +155,4 @@ class Config:
 
     @property
     def raw(self) -> dict:
-        """전체 설정 dict 반환 (읽기 전용 복사)."""
         return copy.deepcopy(self._data)

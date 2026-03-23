@@ -7,7 +7,7 @@ import math
 import re
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 try:
     from PyPDF2 import PdfReader, PdfWriter
@@ -17,7 +17,10 @@ except ImportError:
 try:
     from mistralai.client import Mistral
 except ImportError:
-    from mistralai import Mistral
+    try:
+        from mistralai import Mistral
+    except ImportError:
+        Mistral = None
 
 from .config import Config
 from .utils import safe_filename
@@ -28,7 +31,6 @@ def get_page_count(pdf_path: str) -> int:
 
 
 def split_pdf(pdf_path: str, start: int, end: int) -> bytes:
-    """PDF에서 start~end (0-indexed, inclusive) 추출 → bytes."""
     reader = PdfReader(pdf_path)
     writer = PdfWriter()
     for i in range(start, min(end + 1, len(reader.pages))):
@@ -39,7 +41,6 @@ def split_pdf(pdf_path: str, start: int, end: int) -> bytes:
 
 
 def _ocr_request(client, pdf_bytes: bytes, ocr_model: str):
-    """단일 OCR 요청."""
     pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     return client.ocr.process(
         model=ocr_model,
@@ -52,14 +53,7 @@ def _ocr_request(client, pdf_bytes: bytes, ocr_model: str):
     )
 
 
-async def run_batch_ocr(
-    client,
-    pdf_path: str,
-    ocr_model: str,
-    batch_size: int,
-    max_concurrent: int,
-) -> Tuple[list, int]:
-    """PDF를 batch_size 단위로 분할 → 동시 OCR → 재조립."""
+async def run_batch_ocr(client, pdf_path, ocr_model, batch_size, max_concurrent):
     total = get_page_count(pdf_path)
     num_batches = math.ceil(total / batch_size)
 
@@ -71,10 +65,10 @@ async def run_batch_ocr(
 
     print(f"  📄 전체 {total}p → {num_batches}개 배치 (각 {batch_size}p)")
     sem = asyncio.Semaphore(max_concurrent)
-    all_pages: list = []
-    errors: list = []
+    all_pages = []
+    errors = []
 
-    async def process_batch(idx: int, start: int, end: int):
+    async def process_batch(idx, start, end):
         async with sem:
             chunk_bytes = split_pdf(pdf_path, start, end)
             size_mb = len(chunk_bytes) / (1024 * 1024)
@@ -93,17 +87,13 @@ async def run_batch_ocr(
     await asyncio.gather(*[process_batch(i, s, e) for i, s, e in batches])
 
     if errors:
-        print(f"\n⚠️ {len(errors)}개 배치 실패:")
-        for idx, s, e, err in errors:
-            print(f"  배치 {idx+1} (p{s}-{e}): {err}")
-
+        print(f"\n⚠️ {len(errors)}개 배치 실패")
     all_pages.sort(key=lambda p: p["index"])
     print(f"  ✅ 재조립: {len(all_pages)}/{total}p")
     return all_pages, total
 
 
-def _sdk_pages_to_dicts(pages, offset: int = 0) -> list:
-    """Mistral SDK 페이지 객체를 dict 리스트로 변환."""
+def _sdk_pages_to_dicts(pages, offset=0):
     result = []
     for page in pages:
         result.append({
@@ -115,8 +105,7 @@ def _sdk_pages_to_dicts(pages, offset: int = 0) -> list:
     return result
 
 
-def save_pages(book_name: str, pages: list, total: int, output_dir: str) -> Path:
-    """페이지 데이터를 .md로 저장."""
+def save_pages(book_name, pages, total, output_dir):
     safe_name = safe_filename(book_name)
     out = Path(output_dir) / safe_name
     out.mkdir(parents=True, exist_ok=True)
@@ -131,10 +120,8 @@ def save_pages(book_name: str, pages: list, total: int, output_dir: str) -> Path
                 md_text = md_text.replace(f"[{tid}]({tid})", tc)
         (out / f"page_{pn:04d}.md").write_text(
             f'---\nbook: "{book_name}"\npage: {pn}\n---\n\n# Page {pn}\n\n{md_text}\n',
-            encoding="utf-8",
-        )
+            encoding="utf-8")
 
-    # 통합본
     all_md = f"# {book_name} — OCR Full Text\n\n"
     for md_path in sorted(out.glob("page_*.md")):
         raw = md_path.read_text(encoding="utf-8")
@@ -147,8 +134,10 @@ def save_pages(book_name: str, pages: list, total: int, output_dir: str) -> Path
     return out
 
 
-def run_ocr(cfg: Config, pdf_path: str, book_name: str) -> Path:
-    """OCR 전체 실행 (진입점)."""
+def run_ocr(cfg, pdf_path, book_name):
+    if Mistral is None:
+        raise ImportError("mistralai 패키지를 설치하세요: pip install mistralai")
+
     import nest_asyncio
     nest_asyncio.apply()
 
