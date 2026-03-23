@@ -280,6 +280,31 @@ def run_chunking(cfg, book_dir, book_name):
     total = len(page_meta)
     print(f"\n📖 {book_name} ({total}p)")
 
+    # 캐시 확인
+    cache_path = book_dir / "chunks.json"
+    if cache_path.exists():
+        with open(cache_path, "r", encoding="utf-8") as f:
+            cached = json.load(f)
+        cached_chunks = cached.get("chunks", [])
+        cached_model = cached.get("model", "?")
+        cached_time = cached.get("created_at", "?")
+        print(f"\n⚠️ 기존 chunks.json 발견")
+        print(f"   모델: {cached_model} | 생성: {cached_time} | {len(cached_chunks)}개 청크")
+        print_chunks(cached_chunks)
+
+        choice = input("\n  [r] 기존 결과로 편집  [n] 새로 LLM 요청  [s] 그대로 사용: ").strip().lower()
+        if choice == "s":
+            print("✅ 기존 청크 사용")
+            return cached_chunks
+        elif choice == "r":
+            print("📝 기존 결과 편집 모드")
+            result = edit_chunks_interactive(cached_chunks, page_meta)
+            if result is not None:
+                mode = cached.get("chunking_mode", "auto")
+                save_chunks(result, book_dir, book_name, page_meta, mode, cached_model)
+                return result
+            # retry 선택 시 아래로 계속 진행
+
     print(f"\n📋 메타데이터:")
     for m in page_meta[:10]:
         fl = " | ".join(m["first_lines"]) if m["first_lines"] else "(빈)"
@@ -297,7 +322,6 @@ def run_chunking(cfg, book_dir, book_name):
         print(f"\n📝 수동: {len(chunks)}개")
         model_name = "manual"
     else:
-        # 첫 청킹
         chunks = call_chunking_llm(page_meta, model_config)
 
     # 인터랙티브 편집 루프
