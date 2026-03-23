@@ -1,0 +1,39 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Study Assistant — 기본 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 📁 경로
+paths:
+  drive_base: "/content/drive/MyDrive/Syuririk/001 Project/200 Open Ai Api /study_data"
+  input_dir: "/content"
+  output_dir: null     # null이면 drive_base 사용
+
+# 📖 교재
+book:
+  index: 0             # 교재 목록 번호
+
+# 🔄 OCR
+ocr:
+  model: "mistral-ocr-latest"
+  batch_size: 50       # 한 배치당 페이지 수
+  max_concurrent: 3    # 동시 OCR 요청 수
+
+# 🔀 청킹
+chunking:
+  mode: "auto"         # "auto" 또는 "manual"
+  model:
+    model: "gpt-4.1-nano"
+    temperature: 0.2
+  manual_chunks: []
+
+# 📝 파이프라인
+pipeline:
+  summary:
+    model: "gpt-5-mini"
+  quiz_extract:
+    model: "gpt-5-mini"
+  quiz_create:
+    model: "gpt-5-mini"
+  max_retries: 3
+  retry_delay: 5
+  max_concurrent: 5

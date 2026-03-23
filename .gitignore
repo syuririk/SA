@@ -1,0 +1,9 @@
+.env
+*.key
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+obsidian_output/
+*.zip
+.DS_Store
+Thumbs.db
