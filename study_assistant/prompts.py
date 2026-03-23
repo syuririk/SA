@@ -23,10 +23,14 @@ CHUNKING = (
     "[0,1,2,3,...,25]. Missing even one page is a FAILURE.\n"
     "5. Do NOT create tiny chunks for nearly-empty pages (very low char_count). "
     "Merge them into the nearest neighbor chunk instead.\n"
-    '6. "type" must be "toc", "heading", "content", or "quiz".\n'
-    '7. "title" must use the SAME LANGUAGE as the document.\n'
-    "8. Do NOT include meta-commentary about the output itself.\n"
-    "9. Return ONLY raw JSON.\n\n"
+    "6. CHUNK SIZE: Each content/quiz chunk should be 10-20 pages. "
+    "Never exceed 30 pages per chunk. If a chapter is longer than 30 pages, "
+    "split it into logical sub-sections (e.g. by sub-headings or topic shifts). "
+    "toc and heading chunks may be smaller.\n"
+    '7. "type" must be "toc", "heading", "content", or "quiz".\n'
+    '8. "title" must use the SAME LANGUAGE as the document.\n'
+    "9. Do NOT include meta-commentary about the output itself.\n"
+    "10. Return ONLY raw JSON.\n\n"
     "BEFORE RESPONDING: Verify that every page number from 0 to the last page "
     "appears exactly once across all chunks. Count them."
 )
