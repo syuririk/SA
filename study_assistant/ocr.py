@@ -8,16 +8,9 @@ import re
 import time
 from pathlib import Path
 from typing import Tuple
-
-try:
-    from PyPDF2 import PdfReader, PdfWriter
-    print('import pypdf : PyPDF2')
-except ImportError:
-    from pypdf import PdfReader, PdfWriter
-    print('import pypdf : pypdf')
-
+from PyPDF2 import PdfReader, PdfWriter
 from mistralai.client import Mistral
-print('import Mistral : mistralai.client')
+
 
 
 from .config import Config
