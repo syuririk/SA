@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "study-assistant"
 version = "0.1.0"
 description = "PDF 교재 → Obsidian vault 변환 파이프라인"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
-    "mistralai",
+    "mistralai>=1.0",
     "PyPDF2",
     "openai",
     "pyyaml",

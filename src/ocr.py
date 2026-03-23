@@ -9,8 +9,15 @@ import time
 from pathlib import Path
 from typing import List, Tuple
 
-from PyPDF2 import PdfReader, PdfWriter
-from mistralai import Mistral
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+except ImportError:
+    from pypdf import PdfReader, PdfWriter
+
+try:
+    from mistralai.client import Mistral
+except ImportError:
+    from mistralai import Mistral
 
 from .config import Config
 from .utils import safe_filename
@@ -31,7 +38,7 @@ def split_pdf(pdf_path: str, start: int, end: int) -> bytes:
     return buf.getvalue()
 
 
-def _ocr_request(client: Mistral, pdf_bytes: bytes, ocr_model: str):
+def _ocr_request(client, pdf_bytes: bytes, ocr_model: str):
     """단일 OCR 요청."""
     pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     return client.ocr.process(
@@ -46,7 +53,7 @@ def _ocr_request(client: Mistral, pdf_bytes: bytes, ocr_model: str):
 
 
 async def run_batch_ocr(
-    client: Mistral,
+    client,
     pdf_path: str,
     ocr_model: str,
     batch_size: int,

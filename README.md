@@ -54,7 +54,7 @@ pipeline:
     model: "gpt-5-mini"
 ```
 
-모델 dict는 OpenAI API에 `**config`로 직접 전달됩니다. 
+모델 dict는 OpenAI API에 `**config`로 직접 전달됩니다. GPT-4.1 계열은 `temperature`를 넣고, GPT-5 계열은 빼면 됩니다.
 
 ## Config 클래스
 
