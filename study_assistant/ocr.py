@@ -8,10 +8,19 @@ import re
 import time
 from pathlib import Path
 from typing import Tuple
-from PyPDF2 import PdfReader, PdfWriter
-from mistralai.client import Mistral
 
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+except ImportError:
+    from pypdf import PdfReader, PdfWriter
 
+try:
+    from mistralai.client import Mistral
+except ImportError:
+    try:
+        from mistralai import Mistral
+    except ImportError:
+        Mistral = None
 
 from .config import Config
 from .utils import safe_filename
@@ -56,8 +65,7 @@ async def run_batch_ocr(client, pdf_path, ocr_model, batch_size, max_concurrent)
 
     print(f"  📄 전체 {total}p → {num_batches}개 배치 (각 {batch_size}p)")
     sem = asyncio.Semaphore(max_concurrent)
-    all_pages = []
-    errors = []
+    all_pages, errors = [], []
 
     async def process_batch(idx, start, end):
         async with sem:
@@ -73,10 +81,8 @@ async def run_batch_ocr(client, pdf_path, ocr_model, batch_size, max_concurrent)
                 print(f"  ❌ 배치 {idx+1}: {e}")
                 errors.append((idx, start, end, str(e)))
 
-    batches = [(i, i * batch_size, min((i + 1) * batch_size - 1, total - 1))
-               for i in range(num_batches)]
+    batches = [(i, i * batch_size, min((i+1)*batch_size - 1, total - 1)) for i in range(num_batches)]
     await asyncio.gather(*[process_batch(i, s, e) for i, s, e in batches])
-
     if errors:
         print(f"\n⚠️ {len(errors)}개 배치 실패")
     all_pages.sort(key=lambda p: p["index"])
@@ -85,20 +91,14 @@ async def run_batch_ocr(client, pdf_path, ocr_model, batch_size, max_concurrent)
 
 
 def _sdk_pages_to_dicts(pages, offset=0):
-    result = []
-    for page in pages:
-        result.append({
-            "index": offset + page.index,
-            "markdown": page.markdown,
-            "tables": page.tables if hasattr(page, "tables") and page.tables else [],
-            "images": page.images if hasattr(page, "images") and page.images else [],
-        })
-    return result
+    return [{"index": offset + p.index, "markdown": p.markdown,
+             "tables": p.tables if hasattr(p, "tables") and p.tables else [],
+             "images": p.images if hasattr(p, "images") and p.images else []} for p in pages]
 
 
-def save_pages(book_name, pages, total, output_dir):
+def save_pages(book_name, pages, total, ocr_dir):
     safe_name = safe_filename(book_name)
-    out = Path(output_dir) / safe_name
+    out = Path(ocr_dir) / safe_name
     out.mkdir(parents=True, exist_ok=True)
 
     for page in pages:
@@ -110,8 +110,7 @@ def save_pages(book_name, pages, total, output_dir):
             if tid and tc:
                 md_text = md_text.replace(f"[{tid}]({tid})", tc)
         (out / f"page_{pn:04d}.md").write_text(
-            f'---\nbook: "{book_name}"\npage: {pn}\n---\n\n# Page {pn}\n\n{md_text}\n',
-            encoding="utf-8")
+            f'---\nbook: "{book_name}"\npage: {pn}\n---\n\n# Page {pn}\n\n{md_text}\n', encoding="utf-8")
 
     all_md = f"# {book_name} — OCR Full Text\n\n"
     for md_path in sorted(out.glob("page_*.md")):
@@ -121,23 +120,23 @@ def save_pages(book_name, pages, total, output_dir):
     (out / f"{safe_name}_full.md").write_text(all_md, encoding="utf-8")
 
     saved = len(list(out.glob("page_*.md")))
-    print(f"✅ 저장: {out}/ ({saved}/{total}p + 통합본)")
+    print(f"✅ 저장: {out}/ ({saved}/{total}p)")
     return out
 
 
-def run_ocr(cfg, pdf_path, book_name):
+def run_ocr(cfg: Config, pdf_path: str, book_name: str) -> Path:
     if Mistral is None:
-        raise ImportError("mistralai 패키지를 설치하세요: pip install mistralai")
-
+        raise ImportError("pip install mistralai")
     import nest_asyncio
     nest_asyncio.apply()
 
     ocr_cfg = cfg.get("ocr")
     client = Mistral(api_key=cfg.get("api_keys.mistral", ""))
     total = get_page_count(pdf_path)
-    output = cfg.output_dir
+    ocr_dir = cfg.ocr_dir
 
     print(f"\n📖 {book_name}: {total}p")
+    print(f"   저장: {ocr_dir}/{safe_filename(book_name)}/")
     t0 = time.time()
 
     if total <= ocr_cfg["batch_size"]:
@@ -149,7 +148,7 @@ def run_ocr(cfg, pdf_path, book_name):
             run_batch_ocr(client, pdf_path, ocr_cfg["model"],
                           ocr_cfg["batch_size"], ocr_cfg["max_concurrent"]))
 
-    result = save_pages(book_name, pages, total, output)
+    result = save_pages(book_name, pages, total, ocr_dir)
     elapsed = time.time() - t0
     print(f"⏱️ {elapsed:.1f}초 ({total / max(elapsed, 1):.1f}p/s)")
     return result

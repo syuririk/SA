@@ -1,7 +1,12 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Study Assistant — 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 paths:
-  drive_base: "/content/drive/MyDrive/Syuririk/001 Project/200 Open Ai Api /study_data"
-  input_dir: "/content/drive/MyDrive/Syuririk/001 Project/200 Open Ai Api /study_data"
-  output_dir: "/content/drive/MyDrive/Syuririk/001 Project/200 Open Ai Api /study_data"
+  root: "/content/drive/MyDrive/Syuririk/100 For Agent"
+  pdf: "{root}/PDFs"
+  ocr: "{root}/OCR"
+  vault: "{root}/Vault"
 
 book:
   index: 0
@@ -14,7 +19,7 @@ ocr:
 chunking:
   mode: "auto"
   model:
-    model: "gpt-4.1-nano"
+    model: "gpt-4.1-mini"
     temperature: 0.2
   manual_chunks: []
 
@@ -33,6 +38,6 @@ quiz_generator:
   model:
     model: "gpt-5-mini"
   n: 5
-  quiz_type: "multiple_choice" # multiple_choice / ox / short_answer / fill_in_blank
-  source: "random" # summary / quiz / random
-  difficulty: "medium" # easy / medium / hard
+  quiz_type: "multiple_choice"
+  source: "random"
+  difficulty: "medium"

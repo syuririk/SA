@@ -1,7 +1,7 @@
 """설정 관리 클래스."""
 
 import copy
-import json
+import os
 import yaml
 from pathlib import Path
 from typing import Any, Optional
@@ -9,9 +9,10 @@ from typing import Any, Optional
 
 _DEFAULT_CONFIG = {
     "paths": {
-        "drive_base": "/content/drive/MyDrive/Syuririk/001 Project/200 Open Ai Api /study_data",
-        "input_dir": "/content",
-        "output_dir": None,
+        "root": "/content/drive/MyDrive/Syuririk/100 For Agent",
+        "pdf": "{root}/PDFs",
+        "ocr": "{root}/OCR",
+        "vault": "{root}/Vault",
     },
     "book": {"index": 0},
     "ocr": {
@@ -21,7 +22,7 @@ _DEFAULT_CONFIG = {
     },
     "chunking": {
         "mode": "auto",
-        "model": {"model": "gpt-4.1-nano", "temperature": 0.2},
+        "model": {"model": "gpt-4.1-mini", "temperature": 0.2},
         "manual_chunks": [],
     },
     "pipeline": {
@@ -53,16 +54,12 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 class Config:
-    """설정 로드/조회/수정/저장.
+    """설정 관리.
 
-    사용법:
         cfg = Config()
         cfg = Config("config.yaml")
-        cfg = Config({"book": {"index": 1}})
-
-        cfg.get("pipeline.summary")
+        cfg.get("paths.vault")       # 자동으로 {root} 치환된 경로 반환
         cfg.set("book.index", 2)
-        cfg.save("my_config.yaml")
         cfg.show()
     """
 
@@ -92,6 +89,9 @@ class Config:
                 node = node[part]
             else:
                 return default
+        # paths 값의 {root} 치환
+        if isinstance(node, str) and "{root}" in node:
+            node = node.replace("{root}", self._data.get("paths", {}).get("root", ""))
         return node
 
     def __getitem__(self, key: str) -> Any:
@@ -127,38 +127,63 @@ class Config:
         print(f"\n{'━' * 50}")
         print(title)
         print(f"{'━' * 50}")
-        self._print_dict(data)
+        if section == "paths" or (section is None and isinstance(data, dict) and "paths" in data):
+            self._print_dict(data, resolve_paths=True)
+        else:
+            self._print_dict(data)
         print(f"{'━' * 50}\n")
 
-    def _print_dict(self, data: Any, indent: int = 0) -> None:
+    def _print_dict(self, data: Any, indent: int = 0, resolve_paths: bool = False) -> None:
         prefix = "  " * indent
         if isinstance(data, dict):
             for k, v in data.items():
                 if isinstance(v, dict):
                     print(f"{prefix}{k}:")
-                    self._print_dict(v, indent + 1)
+                    self._print_dict(v, indent + 1, resolve_paths)
                 elif isinstance(v, list) and len(v) > 3:
                     print(f"{prefix}{k}: [{len(v)} items]")
+                elif resolve_paths and isinstance(v, str) and "{root}" in v:
+                    resolved = v.replace("{root}", self._data.get("paths", {}).get("root", ""))
+                    print(f"{prefix}{k}: {resolved}")
                 else:
                     print(f"{prefix}{k}: {v}")
         else:
             print(f"{prefix}{data}")
 
-    @property
-    def drive_base(self) -> str:
-        return self.get("paths.drive_base")
+    # ── 경로 프로퍼티 ─────────────────────────────
 
     @property
-    def output_dir(self) -> str:
-        return self.get("paths.output_dir") or self.drive_base
+    def root(self) -> str:
+        return self.get("paths.root")
 
     @property
-    def input_dir(self) -> str:
-        return self.get("paths.input_dir")
+    def pdf_dir(self) -> str:
+        return self.get("paths.pdf")
+
+    @property
+    def ocr_dir(self) -> str:
+        return self.get("paths.ocr")
+
+    @property
+    def vault_dir(self) -> str:
+        return self.get("paths.vault")
 
     @property
     def book_index(self) -> int:
         return self.get("book.index", 0)
+
+    def book_ocr_dir(self, book_name: str) -> Path:
+        """특정 교재의 OCR 디렉토리."""
+        return Path(self.ocr_dir) / book_name
+
+    def book_vault_dir(self, book_name: str) -> Path:
+        """특정 교재의 vault 디렉토리."""
+        return Path(self.vault_dir) / book_name
+
+    def ensure_dirs(self) -> None:
+        """모든 기본 경로 생성."""
+        for d in [self.root, self.pdf_dir, self.ocr_dir, self.vault_dir]:
+            os.makedirs(d, exist_ok=True)
 
     @property
     def raw(self) -> dict:
