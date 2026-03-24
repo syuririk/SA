@@ -32,6 +32,13 @@ _DEFAULT_CONFIG = {
         "retry_delay": 5,
         "max_concurrent": 5,
     },
+    "quiz_generator": {
+        "model": {"model": "gpt-5-mini"},
+        "n": 5,
+        "quiz_type": "multiple_choice",
+        "source": "random",
+        "difficulty": "medium",
+    },
 }
 
 

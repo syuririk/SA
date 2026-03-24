@@ -2,3 +2,4 @@
 
 from .config import Config
 from .utils import list_books, print_books
+from .quiz_generator import generate_quiz
