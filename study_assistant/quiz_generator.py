@@ -10,17 +10,8 @@ from typing import List
 from openai import OpenAI
 
 from .config import Config
+from .prompts import QUIZ_GEN_SYSTEM, QUIZ_GEN_TYPES, QUIZ_GEN_DIFFICULTY, QUIZ_GEN_SOURCE_INSTR
 from .utils import JSONParser
-
-QUIZ_TYPES = {
-    "multiple_choice": '{"id":N,"type":"multiple_choice","question":"...","options":["①...","②...","③...","④..."],"answer":"③...","explanation":"..."}',
-    "ox": '{"id":N,"type":"ox","question":"...","answer":"O" or "X","explanation":"..."}',
-    "short_answer": '{"id":N,"type":"short_answer","question":"...","answer":"키워드","explanation":"..."}',
-    "fill_in_blank": '{"id":N,"type":"fill_in_blank","question":"___포함 문장","answer":"정답","explanation":"..."}',
-}
-DIFFICULTY_DESC = {"easy":"기초 (정의, 용어)", "medium":"응용 (비교, 사례)", "hard":"심화 (복합, 계산, 함정)"}
-SOURCE_INSTR = {"summary":"다음 요약을 바탕으로 문제를 출제하세요.",
-                "quiz":"다음 기존 문제를 참고하여 유사하지만 새로운 문제를 만드세요."}
 
 
 def _load_md_folder(folder):
@@ -73,8 +64,8 @@ def generate_quiz(cfg, book_name, n=5, quiz_type="multiple_choice",
     vault_dir = cfg.book_vault_dir(book_name)
     if not vault_dir.exists():
         raise FileNotFoundError(f"Vault 없음: {vault_dir}")
-    if quiz_type not in QUIZ_TYPES:
-        raise ValueError(f"유형: {list(QUIZ_TYPES.keys())}")
+    if quiz_type not in QUIZ_GEN_TYPES:
+        raise ValueError(f"유형: {list(QUIZ_GEN_TYPES.keys())}")
 
     model_config = cfg.get("quiz_generator.model", cfg.get("pipeline.quiz_create"))
     print(f"\n🎯 퀴즈 생성: {quiz_type} × {n} | {difficulty} | 소스: {source}")
@@ -82,15 +73,11 @@ def generate_quiz(cfg, book_name, n=5, quiz_type="multiple_choice",
     print(f"   Vault: {vault_dir}")
 
     st, text = _pick_source(vault_dir, source)
-    system = (
-        "You are a certification exam question writer.\n"
-        "Respond with ONLY raw JSON. No fences, no preamble.\n"
-        "Do NOT include meta-commentary.\n"
-        "LANGUAGE: Same as source.\n\n"
-        f"Format per question:\n{QUIZ_TYPES[quiz_type]}\n\n"
-        'Wrap: {"quizzes":[...]}')
-    dd = DIFFICULTY_DESC.get(difficulty, DIFFICULTY_DESC["medium"])
-    si = SOURCE_INSTR.get(st, SOURCE_INSTR["summary"])
+
+    # 프롬프트 조립
+    system = f"{QUIZ_GEN_SYSTEM}\n\nFormat per question:\n{QUIZ_GEN_TYPES[quiz_type]}"
+    dd = QUIZ_GEN_DIFFICULTY.get(difficulty, QUIZ_GEN_DIFFICULTY["medium"])
+    si = QUIZ_GEN_SOURCE_INSTR.get(st, QUIZ_GEN_SOURCE_INSTR["summary"])
     user = f"{si}\n\n유형: {quiz_type}\n문제수: {n}\n난이도: {difficulty} — {dd}\n\n--- 원본 ---\n{text}"
 
     client = OpenAI(); print("  🔄 LLM...")
