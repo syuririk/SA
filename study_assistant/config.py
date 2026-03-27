@@ -40,6 +40,9 @@ _DEFAULT_CONFIG = {
         "source": "random",
         "difficulty": "medium",
     },
+    "graph_rag": {
+        "model": {"model": "gpt-5-mini"},
+    },
 }
 
 

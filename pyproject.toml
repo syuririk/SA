@@ -13,6 +13,7 @@ dependencies = [
     "openai",
     "pyyaml",
     "nest_asyncio",
+    "pyvis",
 ]
 
 [tool.setuptools.packages.find]

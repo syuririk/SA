@@ -41,3 +41,8 @@ quiz_generator:
   quiz_type: "multiple_choice"
   source: "random"
   difficulty: "medium"
+
+# 📐 Graph RAG
+graph_rag:
+  model:
+    model: "gpt-5-mini"
