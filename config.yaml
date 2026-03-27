@@ -32,7 +32,7 @@ pipeline:
     model: "gpt-5-mini"
   max_retries: 3
   retry_delay: 5
-  max_concurrent: 5
+  max_concurrent: 10
 
 quiz_generator:
   model:
@@ -46,3 +46,4 @@ quiz_generator:
 graph_rag:
   model:
     model: "gpt-5-mini"
+  max_concurrent: 10   # 파일당 동시 LLM 호출 수
