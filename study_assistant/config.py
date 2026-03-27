@@ -84,6 +84,12 @@ class Config:
             self._data = _deep_merge(self._data, source)
         return self
 
+    def _resolve(self, value: Any) -> Any:
+        """paths 값의 {root} 치환."""
+        if isinstance(value, str) and "{root}" in value:
+            return value.replace("{root}", self._data.get("paths", {}).get("root", ""))
+        return value
+
     def get(self, key: str, default: Any = None) -> Any:
         parts = key.split(".")
         node = self._data
@@ -92,10 +98,7 @@ class Config:
                 node = node[part]
             else:
                 return default
-        # paths 값의 {root} 치환
-        if isinstance(node, str) and "{root}" in node:
-            node = node.replace("{root}", self._data.get("paths", {}).get("root", ""))
-        return node
+        return self._resolve(node)
 
     def __getitem__(self, key: str) -> Any:
         result = self.get(key)
@@ -145,9 +148,8 @@ class Config:
                     self._print_dict(v, indent + 1, resolve_paths)
                 elif isinstance(v, list) and len(v) > 3:
                     print(f"{prefix}{k}: [{len(v)} items]")
-                elif resolve_paths and isinstance(v, str) and "{root}" in v:
-                    resolved = v.replace("{root}", self._data.get("paths", {}).get("root", ""))
-                    print(f"{prefix}{k}: {resolved}")
+                elif resolve_paths:
+                    print(f"{prefix}{k}: {self._resolve(v)}")
                 else:
                     print(f"{prefix}{k}: {v}")
         else:

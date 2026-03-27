@@ -147,8 +147,15 @@ def save_chunks(chunks, book_dir, book_name, page_meta, mode, model_name):
     print(f"\n✅ 저장: {book_dir}/chunks.json")
 
 
-def run_chunking(cfg, book_name):
-    """OCR 디렉토리에서 읽고 chunks.json 저장."""
+def run_chunking(cfg, book_name, interactive: bool = True):
+    """OCR 디렉토리에서 읽고 chunks.json 저장.
+
+    Args:
+        cfg: Config 객체
+        book_name: 교재 이름
+        interactive: True면 편집 UI 표시 (Colab/터미널용).
+                     False면 캐시 존재 시 그대로 사용, 없으면 LLM 자동 청킹 후 저장.
+    """
     book_dir = cfg.book_ocr_dir(book_name)
     if not book_dir.exists():
         raise FileNotFoundError(f"OCR 없음: {book_dir}")
@@ -158,27 +165,41 @@ def run_chunking(cfg, book_name):
 
     cache = book_dir / "chunks.json"
     if cache.exists():
-        with open(cache, "r", encoding="utf-8") as f: cached = json.load(f)
+        with open(cache, "r", encoding="utf-8") as f:
+            cached = json.load(f)
         print(f"\n⚠️ 기존 chunks.json ({cached.get('model','?')}, {cached.get('created_at','?')})")
         print_chunks(cached.get("chunks", []))
+
+        if not interactive:
+            print("  → 기존 청크 사용 (interactive=False)")
+            return cached["chunks"]
+
         ch = input("\n  [r] 편집  [n] 새로 요청  [s] 그대로: ").strip().lower()
-        if ch == "s": return cached["chunks"]
+        if ch == "s":
+            return cached["chunks"]
         elif ch == "r":
             result = edit_chunks_interactive(cached["chunks"], page_meta)
             if result is not None:
                 save_chunks(result, book_dir, book_name, page_meta,
-                            cached.get("chunking_mode","auto"), cached.get("model","?"))
+                            cached.get("chunking_mode", "auto"), cached.get("model", "?"))
                 return result
+            # 'retry' 선택 시 새로 요청으로 fall-through
 
     for m in page_meta[:10]:
         fl = " | ".join(m["first_lines"]) if m["first_lines"] else "(빈)"
         print(f"  p{m['page']:3d}: {m['char_count']:5d}자 | {fl[:70]}")
-    if len(page_meta) > 10: print(f"  ... ({len(page_meta)-10}개 더)")
+    if len(page_meta) > 10:
+        print(f"  ... ({len(page_meta)-10}개 더)")
 
     mode = cfg.get("chunking.mode", "auto")
     mc = cfg.get("chunking.model")
-    mn = mc.get("model","?") if isinstance(mc, dict) else "manual"
-    chunks = cfg.get("chunking.manual_chunks",[]) if mode == "manual" else call_chunking_llm(page_meta, mc)
+    mn = mc.get("model", "?") if isinstance(mc, dict) else "manual"
+    chunks = (cfg.get("chunking.manual_chunks", []) if mode == "manual"
+              else call_chunking_llm(page_meta, mc))
+
+    if not interactive:
+        save_chunks(chunks, book_dir, book_name, page_meta, mode, mn)
+        return chunks
 
     while True:
         result = edit_chunks_interactive(chunks, page_meta)
@@ -186,7 +207,8 @@ def run_chunking(cfg, book_name):
             instr = input("\n📝 추가 지시: ").strip()
             chunks = call_chunking_llm(page_meta, mc, instr)
         else:
-            chunks = result; break
+            chunks = result
+            break
 
     save_chunks(chunks, book_dir, book_name, page_meta, mode, mn)
     return chunks

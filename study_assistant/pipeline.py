@@ -141,7 +141,8 @@ def generate_toc(chunks, all_files):
         cid,title = chunk["id"],chunk["title"]; files = cf.get(cid,{})
         icon = {"toc":"📑","heading":"📌","content":"📖","quiz":"❓"}.get(chunk.get("type"),"📄")
         pr = chunk.get("pages",[]); ps = f"p.{pr[0]}-{pr[-1]}" if len(pr)>1 else f"p.{pr[0]}" if pr else ""
-        lines.append(f"\n## {icon} [[Sources/{cid}|{title}]] ({ps})\n")
+        src_folder = TYPE_TO_FOLDER.get("Source", "Sources")
+        lines.append(f"\n## {icon} [[{src_folder}/{cid}|{title}]] ({ps})\n")
         for s in files.get("summary",[]): lines.append(f"- [[Summaries/{s}]]")
         qs = files.get("quiz",[]) + files.get("created_quiz",[])
         if qs:
@@ -153,9 +154,18 @@ def generate_toc(chunks, all_files):
         "key_concepts":[],"concepts":[f"[[{c}]]" for c in extract_wikilinks(content)]}}}
 
 
-def save_results(all_data, output_dir):
+def save_results(all_data, output_dir, overwrite: bool = False):
     output_dir = Path(output_dir)
-    if output_dir.exists(): shutil.rmtree(output_dir)
+    if output_dir.exists() and any(output_dir.iterdir()):
+        if not overwrite:
+            print(f"\n⚠️  기존 Vault가 존재합니다: {output_dir}")
+            print(f"   파일 수: {sum(1 for _ in output_dir.rglob('*.md'))}개")
+            ans = input("   덮어쓰기 하시겠습니까? [y/N]: ").strip().lower()
+            if ans != "y":
+                print("   ⛔ 저장 취소 — 기존 Vault를 보존합니다.")
+                return 0
+        log.info(f"♻️  기존 Vault 삭제 후 재생성: {output_dir}")
+        shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     saved = 0
     for fn, info in all_data.items():
@@ -211,7 +221,7 @@ def assemble_chunks(ocr_dir):
     return chunks
 
 
-async def run_pipeline_async(cfg, book_name):
+async def run_pipeline_async(cfg, book_name, overwrite: bool = False):
     ocr_dir = cfg.book_ocr_dir(book_name)
     vault_dir = cfg.book_vault_dir(book_name)
 
@@ -232,11 +242,20 @@ async def run_pipeline_async(cfg, book_name):
     client = AsyncOpenAI()
     sem = asyncio.Semaphore(cfg.get("pipeline.max_concurrent",5))
     all_results = {}
-    def merge(data):
-        for fn,info in data.items():
-            name,ctr=fn,1
-            while name in all_results: b,e=os.path.splitext(fn); name=f"{b}_{ctr}{e}"; ctr+=1
-            all_results[name]=info
+
+    def merge(data: dict) -> None:
+        for fn, info in data.items():
+            if fn not in all_results:
+                all_results[fn] = info
+                continue
+            b, e = os.path.splitext(fn)
+            ctr = 1
+            while True:
+                candidate = f"{b}_{ctr}{e}"
+                if candidate not in all_results:
+                    all_results[candidate] = info
+                    break
+                ctr += 1
 
     log.info("="*60); log.info(f"📚 {book_name}"); log.info("="*60)
 
@@ -261,7 +280,9 @@ async def run_pipeline_async(cfg, book_name):
     if heading_chunks: log.info(f"⑤ Heading {len(heading_chunks)}개 → 원본만")
 
     log.info("⑥ ToC..."); merge(generate_toc(chunks, all_results))
-    log.info("⑦ 저장..."); saved = save_results(all_results, vault_dir)
+    log.info("⑦ 저장..."); saved = save_results(all_results, vault_dir, overwrite=overwrite)
+    if saved == 0:
+        return all_results, vault_dir
     log.info("⑧ 인덱스..."); build_index(all_results, vault_dir)
 
     tc={}
@@ -272,6 +293,6 @@ async def run_pipeline_async(cfg, book_name):
     return all_results, vault_dir
 
 
-def run_pipeline(cfg, book_name):
+def run_pipeline(cfg, book_name, overwrite: bool = False):
     import nest_asyncio; nest_asyncio.apply()
-    return asyncio.run(run_pipeline_async(cfg, book_name))
+    return asyncio.run(run_pipeline_async(cfg, book_name, overwrite=overwrite))

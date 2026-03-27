@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "study-assistant"
-version = "0.4.3"
-description = "PDF"
+version = "0.4.4"
+description = "PDF → Obsidian Vault study assistant (OCR → Chunking → Summary/Quiz)"
 requires-python = ">=3.10"
 dependencies = [
     "mistralai>=1.0",
-    "PyPDF2",
-    "openai",
+    "pypdf",
+    "openai>=1.0",
     "pyyaml",
     "nest_asyncio",
     "pyvis",

@@ -144,6 +144,11 @@ def extract_entities(cfg: Config, book_name: str) -> dict:
         "edges": [],
     }
 
+    # Save intermediate graph (edges will be populated by build_graph)
+    gpath = vault_dir / "formula_graph.json"
+    gpath.write_text(json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"\n✅ Entities saved: {gpath}")
+
     return graph
 
 

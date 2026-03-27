@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import math
+import os
 import re
 import time
 from pathlib import Path
@@ -130,8 +131,16 @@ def run_ocr(cfg: Config, pdf_path: str, book_name: str) -> Path:
     import nest_asyncio
     nest_asyncio.apply()
 
+    api_key = cfg.get("api_keys.mistral") or os.environ.get("MISTRAL_API_KEY", "")
+    if not api_key:
+        raise ValueError(
+            "Mistral API key가 설정되지 않았습니다.\n"
+            "  방법 1: config.yaml에 api_keys.mistral 추가\n"
+            "  방법 2: 환경변수 MISTRAL_API_KEY 설정"
+        )
+
     ocr_cfg = cfg.get("ocr")
-    client = Mistral(api_key=cfg.get("api_keys.mistral", ""))
+    client = Mistral(api_key=api_key)
     total = get_page_count(pdf_path)
     ocr_dir = cfg.ocr_dir
 
