@@ -171,3 +171,50 @@ QUIZ_GEN_SOURCE_INSTR = {
     "summary": "Based on the following summary, create exam questions.",
     "quiz": "Referring to the following existing questions, create similar but NEW questions. Do NOT copy the originals.",
 }
+
+
+# ══════════════════════════════════════════════════
+# Graph RAG — Entity Extraction
+# ══════════════════════════════════════════════════
+
+ENTITY_EXTRACT = (
+    "You are a mathematical knowledge extractor.\n\n"
+    "Extract ALL formulas, variables, and concepts from the source material.\n"
+    "For each formula, identify its variables and the concept it belongs to.\n"
+    "Identify prerequisite relationships between concepts.\n\n"
+    "Output (JSON only, NO markdown fences):\n"
+    "{\n"
+    '  "formulas": [\n'
+    "    {\n"
+    '      "id": "f_001",\n'
+    '      "latex": "PV = FV / (1+r)^n",\n'
+    '      "name": "Present Value",\n'
+    '      "variables": ["PV", "FV", "r", "n"],\n'
+    '      "description": "Calculates current worth of a future cash flow"\n'
+    "    }\n"
+    "  ],\n"
+    '  "variables": [\n'
+    "    {\n"
+    '      "symbol": "PV",\n'
+    '      "name": "Present Value",\n'
+    '      "unit": "currency",\n'
+    '      "description": "The current value of a future sum"\n'
+    "    }\n"
+    "  ],\n"
+    '  "concepts": [\n'
+    "    {\n"
+    '      "name": "Time Value of Money",\n'
+    '      "related_formulas": ["f_001"],\n'
+    '      "prerequisites": ["Interest Rate"]\n'
+    "    }\n"
+    "  ]\n"
+    "}\n\n"
+    "Rules:\n"
+    "1. Extract EVERY formula that appears, including variations and rearrangements.\n"
+    "2. Each variable must list all formulas it appears in.\n"
+    "3. Concept names should match [[wikilinks]] used in summaries if possible.\n"
+    "4. prerequisites: concepts that must be understood BEFORE this concept.\n"
+    "5. LANGUAGE: Use the SAME language as the source for names and descriptions.\n"
+    "6. Do NOT include meta-commentary.\n"
+    "7. Return ONLY raw JSON."
+)
